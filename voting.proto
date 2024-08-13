@@ -1,0 +1,27 @@
+syntax="proto3";
+package proto;
+option go_package="./;proto";
+service VotingService{
+    rpc Vote(VoteRequest) returns (VoteResponse);
+    rpc GetLeaderboard(LeaderboardRequest) returns(LeaderboardResponse);
+    rpc ClearLeaderboard(ClearLeaderboardRequest) returns(ClearLeaderboardResponse);
+}
+message VoteRequest{
+    int32 star_id=1;
+    string user_id=2;
+}
+message VoteResponse{
+    string message=1;
+}
+message LeaderboardRequest{}
+message LeaderboardResponse{
+    repeated StarRanking rankings=1;
+}
+message StarRanking{
+    int32 star_id=1;
+    int64 votes=2;
+}
+message ClearLeaderboardRequest {}
+message ClearLeaderboardResponse {
+    string message = 1;
+}
