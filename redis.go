@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"time"
 	"vote/proto"
 
 	"github.com/go-redis/redis/v8"
 )
 
-var ctx = context.Background()
 var redisClient *redis.Client
 
 func InitRedis(client *redis.Client) {
@@ -24,6 +24,8 @@ func IncrementVote(starID int32) error {
 	key := fmt.Sprintf("%s:votes", shardKey)
 	member := fmt.Sprintf("star:%d", starID)
 	log.Printf("Incrementing vote for Star ID %d in key %s", starID, key)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	err := redisClient.ZIncrBy(ctx, key, 1, member).Err()
 	if err != nil {
 		log.Printf("Error incrementing vote: %v", err)
@@ -35,6 +37,8 @@ func IncrementVote(starID int32) error {
 func GetLeaderboard(shardKey string) ([]redis.Z, error) {
 	key := fmt.Sprintf("%s:votes", shardKey)
 	log.Printf("Getting leaderboard from key %s", key)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	return redisClient.ZRangeWithScores(ctx, key, 0, -1).Result()
 }
 func GetAllRankings() ([]redis.Z, error) {
@@ -75,6 +79,8 @@ func ClearLeaderboard() error {
 		shardKey := fmt.Sprintf("shard:%d", i)
 		key := fmt.Sprintf("%s:votes", shardKey)
 		log.Printf("Clearing leaderboard from key %s", key)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
 		if err := redisClient.Del(ctx, key).Err(); err != nil {
 			return err
 		}
