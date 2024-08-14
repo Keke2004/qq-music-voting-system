@@ -1,0 +1,15 @@
+# QQ-MUSIC-VOTING
+- **cache**
+  - redis.go
+- **main**
+  - client
+    - main.go
+  - server
+    - main.go
+- **proto**
+  - voting_grpc.pb.go
+  - voting.pb.go
+  - voting.proto
+- dump.rdb
+- go.mod
+- go.sum
