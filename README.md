@@ -3,9 +3,9 @@
   - redis.go
 - **main**
   - client
-    - main.go
+    - client.go
   - server
-    - main.go
+    - server.go
 - **proto**
   - voting_grpc.pb.go
   - voting.pb.go
