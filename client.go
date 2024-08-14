@@ -19,7 +19,9 @@ func main() {
 	}
 	defer conn.Close()
 	c := proto.NewVotingServiceClient(conn)
-	_, err = c.ClearLeaderboard(context.Background(), &proto.ClearLeaderboardRequest{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err = c.ClearLeaderboard(ctx, &proto.ClearLeaderboardRequest{})
 	if err != nil {
 		log.Fatalf("could not clear leaderboard: %v", err)
 	}
@@ -51,7 +53,9 @@ func simulateVoting(c proto.VotingServiceClient) {
 		go func() {
 			defer wg.Done()
 			starID := int32(rand.Intn(10) + 1)
-			_, err := c.Vote(context.Background(), &proto.VoteRequest{StarId: starID})
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, err := c.Vote(ctx, &proto.VoteRequest{StarId: starID})
 			if err != nil {
 				log.Printf("could not vote: %v", err)
 			}
@@ -60,7 +64,9 @@ func simulateVoting(c proto.VotingServiceClient) {
 	wg.Wait()
 }
 func printLeaderboard(c proto.VotingServiceClient) {
-	resp, err := c.GetLeaderboard(context.Background(), &proto.LeaderboardRequest{})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	resp, err := c.GetLeaderboard(ctx, &proto.LeaderboardRequest{})
 	if err != nil {
 		log.Fatalf("could not get leaderboard: %v", err)
 	}
