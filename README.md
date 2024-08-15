@@ -3,6 +3,7 @@
   - redis.go
 - **main**
   - client
+    - client_test.go
     - client.go
   - server
     - server.go
