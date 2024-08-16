@@ -19,7 +19,7 @@ func InitRedis(client *redis.Client) {
 func GetShardKey(starID int32) string {
 	return fmt.Sprintf("shard:%d", starID%10)
 }
-func IncrementVote(starID int32, userID string) error {
+func IncrementVote(ctx context.Context, starID int32, userID string) error {
 	shardKey := GetShardKey(starID)
 	voteKey := fmt.Sprintf("%s:votes", shardKey)
 	userKey := fmt.Sprintf("%s:user:%s", shardKey, userID)
@@ -40,18 +40,18 @@ func IncrementVote(starID int32, userID string) error {
 	log.Printf("Vote incremented successfully for StarID %d by UserID %s", starID, userID)
 	return nil
 }
-func GetLeaderboard(shardKey string) ([]redis.Z, error) {
+func GetLeaderboard(ctx context.Context, shardKey string) ([]redis.Z, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	key := fmt.Sprintf("%s:votes", shardKey)
 	log.Printf("Getting leaderboard from key %s", key)
 	return redisClient.ZRangeWithScores(ctx, key, 0, -1).Result()
 }
-func GetAllRankings() ([]redis.Z, error) {
+func GetAllRankings(ctx context.Context) ([]redis.Z, error) {
 	var allRankings []redis.Z
 	for i := 0; i < 10; i++ {
 		shardKey := fmt.Sprintf("shard:%d", i)
-		rankings, err := GetLeaderboard(shardKey)
+		rankings, err := GetLeaderboard(ctx, shardKey)
 		if err != nil {
 			return nil, err
 		}
@@ -80,7 +80,7 @@ func parseStarID(member string) (int32, error) {
 	_, err := fmt.Sscanf(member, "star:%d", &starID)
 	return starID, err
 }
-func ClearLeaderboard() error {
+func ClearLeaderboard(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for i := 0; i < 10; i++ {
