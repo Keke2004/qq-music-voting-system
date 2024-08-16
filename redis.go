@@ -19,26 +19,32 @@ func InitRedis(client *redis.Client) {
 func GetShardKey(starID int32) string {
 	return fmt.Sprintf("shard:%d", starID%10)
 }
-func IncrementVote(starID int32) error {
+func IncrementVote(starID int32, userID string) error {
 	shardKey := GetShardKey(starID)
-	key := fmt.Sprintf("%s:votes", shardKey)
-	member := fmt.Sprintf("star:%d", starID)
-	log.Printf("Incrementing vote for Star ID %d in key %s", starID, key)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	voteKey := fmt.Sprintf("%s:votes", shardKey)
+	userKey := fmt.Sprintf("%s:user:%s", shardKey, userID)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err := redisClient.ZIncrBy(ctx, key, 1, member).Err()
+	pipe := redisClient.TxPipeline()
+	userVoteExists := pipe.SetNX(ctx, userKey, 1, 24*time.Hour)
+	member := fmt.Sprintf("star:%d", starID)
+	pipe.ZIncrBy(ctx, voteKey, 1, member)
+	_, err := pipe.Exec(ctx)
 	if err != nil {
-		log.Printf("Error incrementing vote: %v", err)
-	} else {
-		log.Printf("Vote incremented successfully for StarID %d", starID)
+		return err
 	}
-	return err
+	if !userVoteExists.Val() {
+		log.Printf("User %s has already voted for Star ID %d", userID, starID)
+		return nil
+	}
+	log.Printf("Vote incremented successfully for StarID %d by UserID %s", starID, userID)
+	return nil
 }
 func GetLeaderboard(shardKey string) ([]redis.Z, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	key := fmt.Sprintf("%s:votes", shardKey)
 	log.Printf("Getting leaderboard from key %s", key)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
 	return redisClient.ZRangeWithScores(ctx, key, 0, -1).Result()
 }
 func GetAllRankings() ([]redis.Z, error) {
@@ -75,12 +81,12 @@ func parseStarID(member string) (int32, error) {
 	return starID, err
 }
 func ClearLeaderboard() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	for i := 0; i < 10; i++ {
 		shardKey := fmt.Sprintf("shard:%d", i)
 		key := fmt.Sprintf("%s:votes", shardKey)
 		log.Printf("Clearing leaderboard from key %s", key)
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
 		if err := redisClient.Del(ctx, key).Err(); err != nil {
 			return err
 		}
