@@ -21,16 +21,11 @@ const (
 func BenchmarkVotingService(b *testing.B) {
 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
 	if err != nil {
-		log.Fatalf("did not connect: %v", err)
+		b.Fatalf("did not connect: %v", err)
 	}
 	defer conn.Close()
 	c := proto.NewVotingServiceClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, err = c.ClearLeaderboard(ctx, &proto.ClearLeaderboardRequest{})
-	if err != nil {
-		log.Fatalf("could not clear leaderboard: %v", err)
-	}
+	ctx := context.Background()
 	var wg sync.WaitGroup
 	wg.Add(concurrency)
 	requestsPerGoroutine := totalRequest / concurrency
@@ -41,11 +36,9 @@ func BenchmarkVotingService(b *testing.B) {
 			defer wg.Done()
 			for j := 0; j < requestsPerGoroutine; j++ {
 				starID := int32(rand.Intn(10) + 1)
+				userID := fmt.Sprintf("user_%d", rand.Intn(1000000))
 				start := time.Now()
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-
-				_, err := c.Vote(ctx, &proto.VoteRequest{StarId: starID})
+				_, err := c.Vote(ctx, &proto.VoteRequest{StarId: starID, UserId: userID})
 				if err != nil {
 					log.Printf("could not vote: %v", err)
 				}
