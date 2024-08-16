@@ -19,7 +19,7 @@ func main() {
 	}
 	defer conn.Close()
 	c := proto.NewVotingServiceClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	_, err = c.ClearLeaderboard(ctx, &proto.ClearLeaderboardRequest{})
 	if err != nil {
@@ -53,9 +53,10 @@ func simulateVoting(c proto.VotingServiceClient) {
 		go func() {
 			defer wg.Done()
 			starID := int32(rand.Intn(10) + 1)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			userID := fmt.Sprintf("user_%d", rand.Intn(1000000))
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			_, err := c.Vote(ctx, &proto.VoteRequest{StarId: starID})
+			_, err := c.Vote(ctx, &proto.VoteRequest{StarId: starID, UserId: userID})
 			if err != nil {
 				log.Printf("could not vote: %v", err)
 			}
@@ -64,7 +65,7 @@ func simulateVoting(c proto.VotingServiceClient) {
 	wg.Wait()
 }
 func printLeaderboard(c proto.VotingServiceClient) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	resp, err := c.GetLeaderboard(ctx, &proto.LeaderboardRequest{})
 	if err != nil {
