@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net"
-	"sync"
 	"vote/cache"
 	"vote/proto"
 
@@ -16,21 +15,17 @@ type VotingServiceServer struct {
 	proto.UnimplementedVotingServiceServer
 }
 
-var voteLock sync.Mutex
-
 func (s *VotingServiceServer) Vote(ctx context.Context, req *proto.VoteRequest) (*proto.VoteResponse, error) {
-	voteLock.Lock()
-	defer voteLock.Unlock()
 	starID := req.GetStarId()
 	userID := req.GetUserId()
-	err := cache.IncrementVote(starID, userID)
+	err := cache.IncrementVote(ctx, starID, userID)
 	if err != nil {
 		return nil, err
 	}
 	return &proto.VoteResponse{Message: "Vote successful!"}, nil
 }
 func (s *VotingServiceServer) GetLeaderboard(ctx context.Context, req *proto.LeaderboardRequest) (*proto.LeaderboardResponse, error) {
-	allRankings, err := cache.GetAllRankings()
+	allRankings, err := cache.GetAllRankings(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +33,7 @@ func (s *VotingServiceServer) GetLeaderboard(ctx context.Context, req *proto.Lea
 	return &proto.LeaderboardResponse{Rankings: leaderboard}, nil
 }
 func (s *VotingServiceServer) ClearLeaderboard(ctx context.Context, req *proto.ClearLeaderboardRequest) (*proto.ClearLeaderboardResponse, error) {
-	err := cache.ClearLeaderboard()
+	err := cache.ClearLeaderboard(ctx)
 	if err != nil {
 		return nil, err
 	}
