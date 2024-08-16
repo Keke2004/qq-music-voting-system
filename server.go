@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"sync"
 	"vote/cache"
 	"vote/proto"
 
@@ -15,9 +16,14 @@ type VotingServiceServer struct {
 	proto.UnimplementedVotingServiceServer
 }
 
+var voteLock sync.Mutex
+
 func (s *VotingServiceServer) Vote(ctx context.Context, req *proto.VoteRequest) (*proto.VoteResponse, error) {
+	voteLock.Lock()
+	defer voteLock.Unlock()
 	starID := req.GetStarId()
-	err := cache.IncrementVote(starID)
+	userID := req.GetUserId()
+	err := cache.IncrementVote(starID, userID)
 	if err != nil {
 		return nil, err
 	}
