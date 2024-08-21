@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"time"
 	"vote/proto"
 
@@ -28,7 +29,7 @@ func IncrementVote(ctx context.Context, starID int32, userID string) error {
 	pipe := redisClient.TxPipeline()
 	userVoteExists := pipe.SetNX(ctx, userKey, 1, 24*time.Hour)
 	member := fmt.Sprintf("star:%d", starID)
-	pipe.ZIncrBy(ctx, voteKey, 1, member)
+	pipe.HIncrBy(ctx, voteKey, member, 1)
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return err
@@ -45,7 +46,22 @@ func GetLeaderboard(ctx context.Context, shardKey string) ([]redis.Z, error) {
 	defer cancel()
 	key := fmt.Sprintf("%s:votes", shardKey)
 	log.Printf("Getting leaderboard from key %s", key)
-	return redisClient.ZRangeWithScores(ctx, key, 0, -1).Result()
+	results, err := redisClient.HGetAll(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+	var leaderboard []redis.Z
+	for starIDStr, votesStr := range results {
+		votes, err := strconv.ParseFloat(votesStr, 64)
+		if err != nil {
+			return nil, err
+		}
+		leaderboard = append(leaderboard, redis.Z{Member: starIDStr, Score: votes})
+	}
+	sort.Slice(leaderboard, func(i, j int) bool {
+		return leaderboard[i].Score > leaderboard[j].Score
+	})
+	return leaderboard, nil
 }
 func GetAllRankings(ctx context.Context) ([]redis.Z, error) {
 	var allRankings []redis.Z
@@ -74,6 +90,20 @@ func MergeAndSortRankings(rankings []redis.Z) []*proto.StarRanking {
 		return sortedRankings[i].Votes > sortedRankings[j].Votes
 	})
 	return sortedRankings
+}
+func FlushVotesPeriodically() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		ctx := context.Background()
+		log.Println("Flushing votes to the database")
+		rankings, err := GetAllRankings(ctx)
+		if err != nil {
+			log.Printf("Error fetching rankings: %v", err)
+			continue
+		}
+		log.Printf("Batch writing %d votes to the database", len(rankings))
+	}
 }
 func parseStarID(member string) (int32, error) {
 	var starID int32
