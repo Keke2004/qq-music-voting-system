@@ -47,6 +47,7 @@ func (s *VotingServiceServer) ClearLeaderboard(ctx context.Context, req *proto.C
 func main() {
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
 	cache.InitRedis(rdb)
+	go cache.FlushVotesPeriodically()
 	server := grpc.NewServer()
 	proto.RegisterVotingServiceServer(server, &VotingServiceServer{})
 	lis, err := net.Listen("tcp", ":50051")
