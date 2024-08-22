@@ -27,7 +27,7 @@ func IncrementVote(ctx context.Context, starID int32, userID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	pipe := redisClient.TxPipeline()
-	userVoteExists := pipe.SetNX(ctx, userKey, 1, 24*time.Hour)
+	userVoteExists := pipe.SetNX(ctx, userKey, 1, 10*time.Second)
 	member := fmt.Sprintf("star:%d", starID)
 	pipe.HIncrBy(ctx, voteKey, member, 1)
 	_, err := pipe.Exec(ctx)
