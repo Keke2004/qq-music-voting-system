@@ -5,14 +5,18 @@ import (
 	"fmt"
 	"log"
 	"sort"
-	"strconv"
+	"sync"
 	"time"
 	"vote/proto"
 
 	"github.com/go-redis/redis/v8"
 )
 
-var redisClient *redis.Client
+var (
+	redisClient *redis.Client
+	voteCache   = make(map[string]map[string]int64)
+	cacheLock   sync.Mutex
+)
 
 func InitRedis(client *redis.Client) {
 	redisClient = client
@@ -26,19 +30,54 @@ func IncrementVote(ctx context.Context, starID int32, userID string) error {
 	userKey := fmt.Sprintf("%s:user:%s", shardKey, userID)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	pipe := redisClient.TxPipeline()
-	userVoteExists := pipe.SetNX(ctx, userKey, 1, 10*time.Second)
+	cacheLock.Lock()
+	defer cacheLock.Unlock()
+	userVoteExists, err := redisClient.SetNX(ctx, userKey, 1, 10*time.Second).Result()
+	if err != nil {
+		return err
+	}
+	if !userVoteExists {
+		log.Printf("User %s has already voted for Star ID %d", userID, starID)
+		return nil
+	}
+	if _, ok := voteCache[voteKey]; !ok {
+		voteCache[voteKey] = make(map[string]int64)
+	}
 	member := fmt.Sprintf("star:%d", starID)
-	pipe.HIncrBy(ctx, voteKey, member, 1)
+	voteCache[voteKey][member]++
+	if len(voteCache[voteKey]) >= 1000 {
+		if err := flushVoteCache(ctx); err != nil {
+			return err
+		}
+	}
+	log.Printf("Vote incremented successfully for StarID %d by UserID %s", starID, userID)
+	return nil
+}
+func FlushVotesPeriodically() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		ctx := context.Background()
+		if err := flushVoteCache(ctx); err != nil {
+			log.Printf("Error flushing votes: %v", err)
+		}
+	}
+}
+func flushVoteCache(ctx context.Context) error {
+	cacheLock.Lock()
+	defer cacheLock.Unlock()
+	pipe := redisClient.TxPipeline()
+	for voteKey, starVotes := range voteCache {
+		for member, count := range starVotes {
+			pipe.ZIncrBy(ctx, voteKey, float64(count), member)
+		}
+	}
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return err
 	}
-	if !userVoteExists.Val() {
-		log.Printf("User %s has already voted for Star ID %d", userID, starID)
-		return nil
-	}
-	log.Printf("Vote incremented successfully for StarID %d by UserID %s", starID, userID)
+	voteCache = make(map[string]map[string]int64)
+	log.Printf("Flushed votes to Redis")
 	return nil
 }
 func GetLeaderboard(ctx context.Context, shardKey string) ([]redis.Z, error) {
@@ -46,22 +85,7 @@ func GetLeaderboard(ctx context.Context, shardKey string) ([]redis.Z, error) {
 	defer cancel()
 	key := fmt.Sprintf("%s:votes", shardKey)
 	log.Printf("Getting leaderboard from key %s", key)
-	results, err := redisClient.HGetAll(ctx, key).Result()
-	if err != nil {
-		return nil, err
-	}
-	var leaderboard []redis.Z
-	for starIDStr, votesStr := range results {
-		votes, err := strconv.ParseFloat(votesStr, 64)
-		if err != nil {
-			return nil, err
-		}
-		leaderboard = append(leaderboard, redis.Z{Member: starIDStr, Score: votes})
-	}
-	sort.Slice(leaderboard, func(i, j int) bool {
-		return leaderboard[i].Score > leaderboard[j].Score
-	})
-	return leaderboard, nil
+	return redisClient.ZRangeWithScores(ctx, key, 0, -1).Result()
 }
 func GetAllRankings(ctx context.Context) ([]redis.Z, error) {
 	var allRankings []redis.Z
@@ -79,7 +103,11 @@ func GetAllRankings(ctx context.Context) ([]redis.Z, error) {
 func MergeAndSortRankings(rankings []redis.Z) []*proto.StarRanking {
 	voteMap := make(map[int32]int64)
 	for _, rank := range rankings {
-		starID, _ := parseStarID(rank.Member.(string))
+		starID, err := parseStarID(rank.Member.(string))
+		if err != nil {
+			log.Printf("Error parsing star ID: %v", err)
+			continue
+		}
 		voteMap[starID] += int64(rank.Score)
 	}
 	var sortedRankings []*proto.StarRanking
@@ -90,20 +118,6 @@ func MergeAndSortRankings(rankings []redis.Z) []*proto.StarRanking {
 		return sortedRankings[i].Votes > sortedRankings[j].Votes
 	})
 	return sortedRankings
-}
-func FlushVotesPeriodically() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for range ticker.C {
-		ctx := context.Background()
-		log.Println("Flushing votes to the database")
-		rankings, err := GetAllRankings(ctx)
-		if err != nil {
-			log.Printf("Error fetching rankings: %v", err)
-			continue
-		}
-		log.Printf("Batch writing %d votes to the database", len(rankings))
-	}
 }
 func parseStarID(member string) (int32, error) {
 	var starID int32
